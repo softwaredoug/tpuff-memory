@@ -16,6 +16,7 @@ def judgments(root_path: Path | str) -> pd.DataFrame:
         for qa in episode_qas:
             qa['episode_id'] = episode['episode_id']
             qa['episode_task'] = episode['task']
+            qa['golden_answer'] = qa['answer']
             qa['episode_task_type'] = episode['task_type']
             judgments.append(qa)
     return pd.DataFrame(judgments)

@@ -174,7 +174,6 @@ def evaluate_batch(
     Args:
         qa_results: List of QA result dictionaries containing:
             - episode_id, question, predicted_answer, golden_answer, etc.
-        judge_client: ModelClient for LLM judge
         max_workers: Maximum number of concurrent workers
 
     Returns:
