@@ -14,3 +14,8 @@ Gives understandably poor accuracy:
 ```
 0.1
 ```
+
+### Supported datasets
+
+* [AMABench](https://github.com/AMA-Bench/AMA-Bench)
+* [LongMemEval-v2](https://github.com/xiaowu0162/LongMemEval-V2)
