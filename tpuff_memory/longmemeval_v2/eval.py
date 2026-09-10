@@ -470,7 +470,7 @@ def _parse_llm_binary_judgement(text: str) -> Tuple[int, str]:
             payload = json.loads(json_blob)
             if not isinstance(payload, dict):
                 raise ValueError("Evaluator JSON payload must be an object.")
-            label = payload.get("label")
+            label = payload['label']
             if label in {0, 1, "0", "1"}:
                 label_int = int(label)
                 reason = _stringify_text(payload.get("reason"))
@@ -620,7 +620,8 @@ def eval_batch(
             evaluator_model="gpt-5-mini",
             **kwargs,
         )
-        result["score"] = score_to_bool(score)
+        passes = score_to_bool(score)
+        result["score"] = 1.0 if passes else 0.0
         return result
 
     evaluated_results: list[dict[str, Any]] = []

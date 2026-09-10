@@ -32,6 +32,8 @@ def documents(root_path: Path | str) -> pd.DataFrame:
         for trajectory in trajectories:
             trajectory['episode_task'] = episode['task']
             trajectory['episode_task_type'] = episode['task_type']
+            trajectory['dataset'] = 'amabench'
+
             all_trajectories.append(trajectory)
 
     all_trajectories = pd.DataFrame(all_trajectories)

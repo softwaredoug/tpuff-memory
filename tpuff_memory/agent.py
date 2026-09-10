@@ -1,37 +1,17 @@
 import asyncio
-from agents import Agent, Runner, function_tool
-from sentence_transformers import SentenceTransformer
+from agents import Agent, Runner
 from .dataset import load_dataset
+from .solutions.naive import build_agent
 import argparse
 
 
-# Create a minilm model
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
-
-DEFAULT_SYSTEM_PROMPT = """
-You're being asked to look up information to answer specific questions relating
-to agentic memory.
-
-Use your search tool to retrieve the correct answer
-
-Then respond with the answer to the question
-"""
-
-
-async def memory_agent(question: str,
-                       tools=[],
-                       system_prompt: str = DEFAULT_SYSTEM_PROMPT) -> tuple[str, str]:
-    agent = Agent(
-        name="Memory Agent",
-        instructions=system_prompt,
-        tools=tools,
-    )
+async def run_agent(agent: Agent,
+                    question: str):
     result = await Runner.run(agent, question)
     return question, result.final_output
 
 
-async def search_all(search_tool, judgments, eval_fn, limit=10):
+async def search_all(agent, judgments, eval_fn, limit=10):
     task_metadatas = {}
     tasks = []
     for _, judgment in judgments.head(limit).iterrows():
@@ -39,7 +19,7 @@ async def search_all(search_tool, judgments, eval_fn, limit=10):
         metadata = judgment.to_dict()
         task_metadatas[question] = metadata
         assert isinstance(question, str)
-        task = asyncio.create_task(memory_agent(question, tools=[search_tool]))
+        task = asyncio.create_task(run_agent(agent, question))
         tasks.append(task)
 
     eval_inputs = []
@@ -60,36 +40,10 @@ def main():
                         help="Dataset to use for evaluation")
     args = parser.parse_args()
     corpus, judgments, eval = load_dataset(args.dataset)
+    agent = build_agent(corpus)
 
-    indexed_column = None
-    if args.dataset == "longmemevalv2":
-        indexed_column = ("Agent Thought: " + corpus["thought"].fillna("")
-                          + " Agent Action: " + corpus["action"].fillna("")
-                          + " Agent Goal: " + corpus["goal"].fillna(""))
-    elif args.dataset == "amabench":
-        indexed_column = "Agent Observation: " + corpus["observation"].fillna("")
-
-    embeddings = model.encode(indexed_column.to_numpy(),
-                              show_progress_bar=True, convert_to_numpy=True)
-
-    @function_tool
-    def search_memories(query: str):
-        """Return 5 similar agent events tto query to help answer the question."""
-        print(f"Searching for memories related to query: {query}")
-        query_embedding = model.encode([query])[0]
-        scores = embeddings @ query_embedding
-
-        top_indices = scores.argsort()[-5:][::-1]
-
-        results = []
-        for idx in top_indices:
-            row = corpus.iloc[idx]
-            result = row.to_dict()
-            results.append(result)
-        return results
-
-    asyncio.run(search_all(limit=args.limit,
-                           search_tool=search_memories,
+    asyncio.run(search_all(agent,
+                           limit=args.limit,
                            eval_fn=eval,
                            judgments=judgments))
 
