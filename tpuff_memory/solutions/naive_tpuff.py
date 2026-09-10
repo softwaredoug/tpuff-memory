@@ -29,6 +29,18 @@ def tpuff_batch(corpus, embeddings, batch_size=1024):
     yield curr_batch
 
 
+def ns_exists(tpuf, ns_name, expected_count):
+    ns = tpuf.namespace(ns_name)
+    try:
+        metadata = ns.metadata()
+        if metadata.approx_row_count < expected_count:
+            print(f"Namespace {ns_name} exists but has fewer rows ({metadata.approx_row_count}) than expected ({expected_count}).")
+            return False
+    except turbopuffer.NotFoundError:
+        return False
+    return True
+
+
 class TurboPufferIndex:
 
     def __init__(self):
@@ -36,36 +48,41 @@ class TurboPufferIndex:
             api_key=TPUF_API_KEY,
             region="gcp-us-central1"
         )
-        self.ns = self.tpuf.namespace(f'doug-{uuid.uuid4()}-agentmem')
+        self.ns = None
 
     def index_docs(self, corpus):
         """
         Index the documents into TurboPuffer.
         """
-        embeddings = model.encode(corpus['description'].to_numpy(), show_progress_bar=True, convert_to_numpy=True)
-        with tqdm.tqdm(total=len(corpus), desc="Indexing documents") as pbar:
-            for batch in tpuff_batch(corpus, embeddings):
-                self.ns.write(
-                    upsert_rows=batch,
-                    distance_metric="cosine_distance",
-                    schema={
-                        "content": {
-                            "type": "string",
-                            "full_text_search": True,
-                            "filterable": False
+        ns_name = "agentmem-" + corpus['dataset'].iloc[0]
+        expected_count = len(corpus)
+        if not ns_exists(self.tpuf, ns_name, expected_count):
+            self.ns = self.tpuf.namespace(ns_name)
+            embeddings = model.encode(corpus['description'].to_numpy(), show_progress_bar=True, convert_to_numpy=True)
+            with tqdm.tqdm(total=expected_count, desc="Indexing documents") as pbar:
+                for batch in tpuff_batch(corpus, embeddings):
+                    self.ns.write(
+                        upsert_rows=batch,
+                        distance_metric="cosine_distance",
+                        schema={
+                            "content": {
+                                "type": "string",
+                                "full_text_search": True,
+                                "filterable": False
+                            }
                         }
-                    }
-                )
-                pbar.update(len(batch))
+                    )
+                    pbar.update(len(batch))
 
-        result = self.ns.query(
-            rank_by=("id", "asc"),
-            limit=1,
-        )
-        count = result.performance.approx_namespace_size
-        print(f"Indexed {count} documents into TurboPuffer.")
+            result = self.ns.query(
+                rank_by=("id", "asc"),
+                limit=1,
+            )
+            count = result.performance.approx_namespace_size
+            print(f"Indexed {count} documents into TurboPuffer.")
 
     def query(self, query, top_k=5):
+        print(f"Querying TurboPuffer for top {top_k} results related to: {query}")
         results = self.ns.query(
             rank_by=["text", "ANN", ["Embed", query]],
             top_k=top_k,
@@ -107,6 +124,7 @@ def build_agent(corpus: pd.DataFrame) -> Agent:
         results = []
         for result in tpuff_results:
             results.append(corpus[corpus['doc_id'] == result['id']].iloc[0].to_dict())
+        import pdb; pdb.set_trace()
 
         return results
 
