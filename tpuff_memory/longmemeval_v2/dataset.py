@@ -22,5 +22,6 @@ def documents(path: Path | str):
             step['outcome'] = trajectory['outcome']
             step['start_url'] = trajectory['start_url']
             step['dataset'] = 'longmemevalv2'
+            step['doc_id'] = f"{trajectory['id']}_{step['step_id']}"
             flattened.append(step)
     return pd.DataFrame(flattened)

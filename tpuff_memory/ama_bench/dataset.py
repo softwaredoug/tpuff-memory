@@ -33,6 +33,7 @@ def documents(root_path: Path | str) -> pd.DataFrame:
             trajectory['episode_task'] = episode['task']
             trajectory['episode_task_type'] = episode['task_type']
             trajectory['dataset'] = 'amabench'
+            trajectory['doc_id'] = f"{episode['episode_id']}_{trajectory['turn_idx']}"
 
             all_trajectories.append(trajectory)
 

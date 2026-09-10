@@ -1,0 +1,118 @@
+import os
+import turbopuffer
+import uuid
+import pandas as pd
+from agents import Agent, function_tool
+from sentence_transformers import SentenceTransformer
+import tqdm
+
+
+TPUF_API_KEY = os.getenv("TPUF_API_KEY")
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+
+def tpuff_batch(corpus, embeddings, batch_size=1024):
+    """
+    Turbopuffer rows batched
+    """
+    curr_batch = []
+    for idx, row in corpus.iterrows():
+        doc = {
+            "id": row['doc_id'],
+            "content": row['description'],
+            "vector": embeddings[idx].tolist()
+        }
+        curr_batch.append(doc)
+        if len(curr_batch) >= batch_size:
+            yield curr_batch
+            curr_batch = []
+    yield curr_batch
+
+
+class TurboPufferIndex:
+
+    def __init__(self):
+        self.tpuf = turbopuffer.Turbopuffer(
+            api_key=TPUF_API_KEY,
+            region="gcp-us-central1"
+        )
+        self.ns = self.tpuf.namespace(f'doug-{uuid.uuid4()}-agentmem')
+
+    def index_docs(self, corpus):
+        """
+        Index the documents into TurboPuffer.
+        """
+        embeddings = model.encode(corpus['description'].to_numpy(), show_progress_bar=True, convert_to_numpy=True)
+        with tqdm.tqdm(total=len(corpus), desc="Indexing documents") as pbar:
+            for batch in tpuff_batch(corpus, embeddings):
+                self.ns.write(
+                    upsert_rows=batch,
+                    distance_metric="cosine_distance",
+                    schema={
+                        "content": {
+                            "type": "string",
+                            "full_text_search": True,
+                            "filterable": False
+                        }
+                    }
+                )
+                pbar.update(len(batch))
+
+        result = self.ns.query(
+            rank_by=("id", "asc"),
+            limit=1,
+        )
+        count = result.performance.approx_namespace_size
+        print(f"Indexed {count} documents into TurboPuffer.")
+
+    def query(self, query, top_k=5):
+        results = self.ns.query(
+            rank_by=["text", "ANN", ["Embed", query]],
+            top_k=top_k,
+            include_attributes=["content"],
+        )
+        return results
+
+
+DEFAULT_SYSTEM_PROMPT = """
+You're being asked to look up information to answer specific questions relating
+to agentic memory.
+
+Use your search tool to retrieve the correct answer
+
+Then respond with the answer to the question
+"""
+
+
+def build_agent(corpus: pd.DataFrame) -> Agent:
+    indexed_column = None
+    dataset = corpus['dataset'].iloc[0]
+    if dataset == "longmemevalv2":
+        indexed_column = ("Agent Thought: " + corpus["thought"].fillna("")
+                          + " Agent Action: " + corpus["action"].fillna("")
+                          + " Agent Goal: " + corpus["goal"].fillna(""))
+    elif dataset == "amabench":
+        indexed_column = "Agent Observation: " + corpus["observation"].fillna("")
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
+    corpus['description'] = indexed_column
+
+    tpuff_index = TurboPufferIndex()
+    tpuff_index.index_docs(corpus)
+
+    @function_tool
+    def search_memories(query: str):
+        """Return 5 similar agent events tto query to help answer the question."""
+        tpuff_results = tpuff_index.query(query, top_k=5)
+        results = []
+        for result in tpuff_results:
+            results.append(corpus[corpus['doc_id'] == result['id']].iloc[0].to_dict())
+
+        return results
+
+    agent = Agent(
+        name="Memory Agent",
+        instructions=DEFAULT_SYSTEM_PROMPT,
+        tools=[search_memories]
+    )
+    return agent

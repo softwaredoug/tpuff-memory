@@ -1,7 +1,7 @@
 import asyncio
 from agents import Agent, Runner
 from .dataset import load_dataset
-from .solutions.naive import build_agent
+from .solutions import build_agent
 import argparse
 
 
@@ -38,9 +38,10 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Number of questions to evaluate")
     parser.add_argument("--dataset", choices=["amabench", "longmemevalv2"], required=True,
                         help="Dataset to use for evaluation")
+    parser.add_argument("--solution", choices=["naive", "naive_tpuff"], required=True, help="Solution to evaluate")
     args = parser.parse_args()
     corpus, judgments, eval = load_dataset(args.dataset)
-    agent = build_agent(corpus)
+    agent = build_agent(args.solution, corpus)
 
     asyncio.run(search_all(agent,
                            limit=args.limit,
