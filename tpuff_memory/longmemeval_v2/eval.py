@@ -611,10 +611,13 @@ def eval_batch(
     def evaluate_single(result: dict[str, Any]) -> dict[str, Any]:
         eval_spec = result['eval_function']
         func, kwargs = parse_eval_function_spec(eval_spec)
+        # Unbox predicted
+        result['predicted_answer'] = extract_boxed_answer(result['predicted_answer'])
         score = func(
-            prediction=result.get("predicted_answer"),
-            answer=result.get("golden_answer"),
+            prediction=result["predicted_answer"],
+            answer=result["golden_answer"],
             question_item=result,
+            evaluator_model="gpt-5-mini",
             **kwargs,
         )
         result["score"] = score_to_bool(score)

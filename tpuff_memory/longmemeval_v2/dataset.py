@@ -4,6 +4,7 @@ from pathlib import Path
 
 def judgments(path: Path | str):
     qs = pd.read_json(Path(path) / "questions.jsonl", lines=True)
+    qs['golden_answer'] = qs['answer']
     return qs
 
 
