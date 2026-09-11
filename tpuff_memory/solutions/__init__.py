@@ -2,11 +2,12 @@ import pandas as pd
 from agents import Agent
 
 
-def build_agent(solution: str, corpus: pd.DataFrame) -> Agent:
+def build_agent(solution: str, corpus: pd.DataFrame,
+                failure_hook) -> Agent:
     if solution == "naive":
         from .naive import build_agent
         return build_agent(corpus)
     elif solution == "naive_tpuff":
         from .naive_tpuff import build_agent
-        return build_agent(corpus)
+        return build_agent(corpus, failure_hook)
     raise ValueError(f"Unknown solution: {solution}")

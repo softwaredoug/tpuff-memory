@@ -1,8 +1,9 @@
 import os
 import turbopuffer
-import uuid
 import pandas as pd
 from agents import Agent, function_tool
+from agents.tool_context import ToolContext
+from ..context import RequestContext
 from sentence_transformers import SentenceTransformer
 import tqdm
 
@@ -56,8 +57,8 @@ class TurboPufferIndex:
         """
         ns_name = "agentmem-" + corpus['dataset'].iloc[0]
         expected_count = len(corpus)
+        self.ns = self.tpuf.namespace(ns_name)
         if not ns_exists(self.tpuf, ns_name, expected_count):
-            self.ns = self.tpuf.namespace(ns_name)
             embeddings = model.encode(corpus['description'].to_numpy(), show_progress_bar=True, convert_to_numpy=True)
             with tqdm.tqdm(total=expected_count, desc="Indexing documents") as pbar:
                 for batch in tpuff_batch(corpus, embeddings):
@@ -81,13 +82,27 @@ class TurboPufferIndex:
             count = result.performance.approx_namespace_size
             print(f"Indexed {count} documents into TurboPuffer.")
 
-    def query(self, query, top_k=5):
+    def query(self, query, top_k=5) -> list[dict]:
         print(f"Querying TurboPuffer for top {top_k} results related to: {query}")
-        results = self.ns.query(
-            rank_by=["text", "ANN", ["Embed", query]],
+        if self.ns is None:
+            raise RuntimeError("Namespace is not initialized. Please index documents first.")
+        query_embedding = model.encode([query])[0].tolist()
+        print("Encoded, calling")
+        ns_results = self.ns.query(
+            rank_by=("vector", "ANN", query_embedding),
             top_k=top_k,
             include_attributes=["content"],
         )
+        print("Results retrieved")
+        results: list[dict] = []
+        for row in ns_results.rows or []:
+            content = row['content']
+            result = {
+                "id": row['id'],
+                "score": row['$dist'],
+                "content": content if isinstance(content, str) else ""
+            }
+            results.append(result)
         return results
 
 
@@ -101,7 +116,8 @@ Then respond with the answer to the question
 """
 
 
-def build_agent(corpus: pd.DataFrame) -> Agent:
+def build_agent(corpus: pd.DataFrame,
+                failure_hook) -> Agent:
     indexed_column = None
     dataset = corpus['dataset'].iloc[0]
     if dataset == "longmemevalv2":
@@ -117,14 +133,22 @@ def build_agent(corpus: pd.DataFrame) -> Agent:
     tpuff_index = TurboPufferIndex()
     tpuff_index.index_docs(corpus)
 
-    @function_tool
-    def search_memories(query: str):
+    @function_tool(failure_error_function=failure_hook,
+                   timeout=60)
+    async def search_memories(ctx: ToolContext[RequestContext],
+                              query: str):
         """Return 5 similar agent events tto query to help answer the question."""
+        req_context: RequestContext = ctx.context
+        q_id = req_context.question_id
+        print(f"{q_id} -- Question: {req_context.question}")
+        print(f"{q_id} -- Using query: {query}")
         tpuff_results = tpuff_index.query(query, top_k=5)
-        results = []
+        print("HERE")
+        print(f"{q_id} -- Retrieved {len(tpuff_results)} results from TurboPuffer.")
+        results: list[dict] = []
         for result in tpuff_results:
+            print(f"{q_id} -- Result ID: {result['id']}, Score: {result['score']}")
             results.append(corpus[corpus['doc_id'] == result['id']].iloc[0].to_dict())
-        import pdb; pdb.set_trace()
 
         return results
 
