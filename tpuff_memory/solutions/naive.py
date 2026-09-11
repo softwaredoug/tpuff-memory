@@ -16,7 +16,7 @@ Then respond with the answer to the question
 """
 
 
-def build_agent(corpus: pd.DataFrame) -> Agent:
+def build_agent(corpus: pd.DataFrame, failure_hook) -> Agent:
     indexed_column = None
     dataset = corpus['dataset'].iloc[0]
     if dataset == "longmemevalv2":
@@ -31,7 +31,8 @@ def build_agent(corpus: pd.DataFrame) -> Agent:
     embeddings = model.encode(indexed_column.to_numpy(),
                               show_progress_bar=True, convert_to_numpy=True)
 
-    @function_tool
+    @function_tool(failure_error_function=failure_hook,
+                   timeout=60)
     def search_memories(query: str):
         """Return 5 similar agent events tto query to help answer the question."""
         print(f"Searching for memories related to query: {query}")

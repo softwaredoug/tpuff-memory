@@ -47,6 +47,7 @@ async def search_all(agent, judgments, eval_fn, limit=10):
         metadata['predicted_answer'] = result
         eval_inputs.append(metadata)
     results = pd.DataFrame(eval_fn(eval_inputs))
+    import pdb; pdb.set_trace()
     accuracy = results['score'].sum() / len(results)
     print(accuracy)
 
@@ -56,7 +57,7 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Number of questions to evaluate")
     parser.add_argument("--dataset", choices=["amabench", "longmemevalv2"], required=True,
                         help="Dataset to use for evaluation")
-    parser.add_argument("--solution", choices=["naive", "naive_tpuff"], required=True, help="Solution to evaluate")
+    parser.add_argument("--solution", choices=["naive", "naive_tpuff", "naive_entity"], required=True, help="Solution to evaluate")
     args = parser.parse_args()
     corpus, judgments, eval = load_dataset(args.dataset)
     agent = build_agent(args.solution, corpus,
