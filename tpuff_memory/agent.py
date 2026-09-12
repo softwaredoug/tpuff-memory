@@ -1,6 +1,7 @@
 import asyncio
 from agents import Agent, Runner
 from agents.run_context import RunContextWrapper
+from openai import BadRequestError
 from .dataset import load_dataset
 from .solutions import build_agent
 import argparse
@@ -9,19 +10,33 @@ from .context import RequestContext
 from pydantic import BaseModel
 
 
+# n=100
+# phrase_tpuff = 0.51
+
+
 async def run_agent(agent: Agent,
                     question_id: int,
-                    question: str):
+                    question: str,
+                    max_attempts: int = 3):
     context = RequestContext(question=question,
                              question_id=question_id)
-    result = await Runner.run(agent,
-                              question,
-                              context=context)
-    output = result.final_output
-    if isinstance(output, BaseModel):
-        print(str(output))
-        output = output.final_output
-    return question, output
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = await Runner.run(agent,
+                                      question,
+                                      context=context)
+            output = result.final_output
+            if isinstance(output, BaseModel):
+                print(str(output))
+                output = output.final_output
+            return question, output
+        except BadRequestError as e:
+            print(f"Attempt {attempt} failed for question {question[:20]}... (ID: {question_id}) with error: {e}")
+            if attempt == max_attempts:
+                print(f"Max attempts reached for question {question[:20]}... (ID: {question_id}). FAILED!")
+                return question, ""
+            # Sleep
+            await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
 
 def report_tool_failure(
@@ -64,7 +79,7 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Number of questions to evaluate")
     parser.add_argument("--dataset", choices=["amabench", "longmemevalv2"], required=True,
                         help="Dataset to use for evaluation")
-    parser.add_argument("--solution", choices=["naive", "naive_tpuff", "naive_entity"],
+    parser.add_argument("--solution", choices=["naive", "naive_tpuff", "naive_entity", "phrase_tpuff"],
                         required=True,
                         help="Solution to evaluate")
     args = parser.parse_args()
