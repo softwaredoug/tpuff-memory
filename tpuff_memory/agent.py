@@ -6,6 +6,7 @@ from .solutions import build_agent
 import argparse
 import pandas as pd
 from .context import RequestContext
+from pydantic import BaseModel
 
 
 async def run_agent(agent: Agent,
@@ -16,7 +17,11 @@ async def run_agent(agent: Agent,
     result = await Runner.run(agent,
                               question,
                               context=context)
-    return question, result.final_output
+    output = result.final_output
+    if isinstance(output, BaseModel):
+        print(str(output))
+        output = output.final_output
+    return question, output
 
 
 def report_tool_failure(
@@ -45,9 +50,11 @@ async def search_all(agent, judgments, eval_fn, limit=10):
         question, result = await completed
         metadata = task_metadatas[question]
         metadata['predicted_answer'] = result
+        print(f"Question: {question}\nPredicted Answer: {result}\n")
+        print(f"Golden Answer: {metadata['golden_answer']}\n")
+        print("----------------------------------------")
         eval_inputs.append(metadata)
     results = pd.DataFrame(eval_fn(eval_inputs))
-    import pdb; pdb.set_trace()
     accuracy = results['score'].sum() / len(results)
     print(accuracy)
 
@@ -57,7 +64,9 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Number of questions to evaluate")
     parser.add_argument("--dataset", choices=["amabench", "longmemevalv2"], required=True,
                         help="Dataset to use for evaluation")
-    parser.add_argument("--solution", choices=["naive", "naive_tpuff", "naive_entity"], required=True, help="Solution to evaluate")
+    parser.add_argument("--solution", choices=["naive", "naive_tpuff", "naive_entity"],
+                        required=True,
+                        help="Solution to evaluate")
     args = parser.parse_args()
     corpus, judgments, eval = load_dataset(args.dataset)
     agent = build_agent(args.solution, corpus,

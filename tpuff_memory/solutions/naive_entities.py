@@ -32,7 +32,7 @@ def build_agent(corpus: pd.DataFrame, failure_hook) -> Agent:
 
     doc_ids_to_entities = asyncio.run(extract_all(corpus))
     # Init all corpus to empty list for entities
-    corpus['entities'] = []
+    corpus['entities'] = [[] for _ in range(len(corpus))]
     all_entities = []
     for doc_id, entities in doc_ids_to_entities.items():
         corpus.loc[corpus['doc_id'] == doc_id, 'entities'] = set(entities)

@@ -6,6 +6,7 @@ from platformdirs import user_cache_dir
 from pathlib import Path
 import json
 import asyncio
+import hashlib
 
 
 class EntitiesMentioned(BaseModel):
@@ -45,13 +46,20 @@ Only list proper nouns, unique identifiers, or specific references that are not 
 """
 
 
+def str_hash(s: str) -> str:
+    """Return a hash of the string."""
+    return hashlib.md5(s.encode('utf-8')).hexdigest()[:8]
+
+
 def load_cache(cache_name):
     cache_dir = Path(user_cache_dir(cache_name))
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = f"{cache_dir}/entities.json"
     try:
         with open(cache_path, "r") as f:
-            return json.load(f)
+            cache = json.load(f)
+            print(f"Loaded cache from {cache_path} with {len(cache)} entries")
+            return cache
     except FileNotFoundError:
         return {}
 
@@ -67,14 +75,19 @@ def save_cache(cache_name, cache):
 def make_cache_key(model, system_prompt, input, text_format: BaseModel):
     json_schema = text_format.model_json_schema()
     as_str = json.dumps(json_schema, sort_keys=True)
-    return f"{model}_{hash(system_prompt)}_{hash(input)}_{hash(as_str)}"
+    cache_key = f"{model}_{str_hash(system_prompt)}_{str_hash(input)}_{str_hash(as_str)}"
+    print(f"Cache key: {cache_key}")
+    return cache_key
 
 
-async def call_openai_cached(client: AsyncOpenAI, cache_name: str,
+cache = load_cache('entities')
+
+
+async def call_openai_cached(client: AsyncOpenAI,
                              model: str, system_prompt: str, input: str, text_format):
-    cache = load_cache(cache_name)
     cache_key = make_cache_key(model, system_prompt, input, text_format)
     if cache_key in cache:
+        print(f"Cache hit for key: {cache_key}")
         restored = text_format.model_validate_json(cache[cache_key])
         return restored
     response = await client.responses.parse(
@@ -85,7 +98,7 @@ async def call_openai_cached(client: AsyncOpenAI, cache_name: str,
     )
     assert response.output_parsed is not None, "Failed to parse response into SearchQueries"
     cache[cache_key] = response.output_parsed.model_dump_json()
-    save_cache(cache_name, cache)
+    save_cache('entities', cache)
     return response.output_parsed
 
 
@@ -98,7 +111,7 @@ async def extract_entities(client: AsyncOpenAI,
 
      {text}
     """
-    response = await call_openai_cached(client, cache_name="longmemevalv2_entities",
+    response = await call_openai_cached(client,
                                         model="gpt-5-mini",
                                         system_prompt=system_prompt,
                                         input=input,
@@ -106,11 +119,12 @@ async def extract_entities(client: AsyncOpenAI,
     return response, column, doc_id
 
 
-async def extract_all(corpus, limit=100):
+async def extract_all(corpus, limit=None):
     documents_df = corpus
     # shuffle
     # documents_df = documents_df.sample(frac=1).reset_index(drop=True).head(limit)
-    documents_df = documents_df.head(limit)
+    if limit:
+        documents_df = documents_df.head(limit)
     tasks = []
     semaphore = asyncio.Semaphore(5)  # Limit to 5 concurrent tasks
     async with AsyncOpenAI() as client:
