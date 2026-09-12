@@ -8,6 +8,7 @@ import argparse
 import pandas as pd
 from .context import RequestContext
 from pydantic import BaseModel
+from agents.items import ToolCallItem
 
 
 # n=100
@@ -26,15 +27,21 @@ async def run_agent(agent: Agent,
                                       question,
                                       context=context)
             output = result.final_output
+
+            tool_call_count = sum(
+                isinstance(item, ToolCallItem)
+                for item in result.new_items
+            )
+
             if isinstance(output, BaseModel):
                 print(str(output))
                 output = output.final_output
-            return question, output
+            return question, output, tool_call_count
         except BadRequestError as e:
             print(f"Attempt {attempt} failed for question {question[:20]}... (ID: {question_id}) with error: {e}")
             if attempt == max_attempts:
                 print(f"Max attempts reached for question {question[:20]}... (ID: {question_id}). FAILED!")
-                return question, ""
+                return question, "", 10
             # Sleep
             await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
@@ -62,16 +69,18 @@ async def search_all(agent, judgments, eval_fn, limit=10):
 
     eval_inputs = []
     for completed in asyncio.as_completed(tasks):
-        question, result = await completed
+        question, result, num_tool_calls = await completed
         metadata = task_metadatas[question]
         metadata['predicted_answer'] = result
+        metadata['num_tool_calls'] = num_tool_calls
         print(f"Question: {question}\nPredicted Answer: {result}\n")
         print(f"Golden Answer: {metadata['golden_answer']}\n")
         print("----------------------------------------")
         eval_inputs.append(metadata)
     results = pd.DataFrame(eval_fn(eval_inputs))
     accuracy = results['score'].sum() / len(results)
-    print(accuracy)
+    mean_tool_calls = results['num_tool_calls'].mean()
+    print(f"ACC={accuracy} tool_calls={mean_tool_calls}")
 
 
 def main():

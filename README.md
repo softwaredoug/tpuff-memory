@@ -15,9 +15,9 @@ Just flatten every agent step, embed a description with MiniLM, and search them
 uv run python -m tpuff_memory.agent  --dataset longmemevalv2 --solution naive_tpuff --limit 100
 ```
 
-Gives understandably poor accuracy:
+Gives understandably poor accuracy, over very few tool calls
 ```
-0.23
+ACC=0.25 tool_calls(mean)=1.28
 ```
 
 ## Add phrase tool
@@ -36,7 +36,7 @@ Allow phrase search:
 Gives
 
 ```
-0.52
+ACC=0.48 tool_calls(mean)=2.02
 ```
 
 ### Download dataset
